@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import random
 import time
+import random
 
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Government Exam Practice Test", layout="centered")
@@ -15,15 +15,19 @@ def load_data():
     df = pd.read_csv(DATA_PATH)
     df = df.fillna("")
 
-    # 🔍 Auto-detect difficulty column
+    # Normalize subject & concept
+    for col in ["subject", "concept"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    # Normalize difficulty
     if "difficulty" in df.columns:
-        df["__difficulty__"] = df["difficulty"]
+        df["__difficulty__"] = df["difficulty"].astype(str).str.title()
     elif "difficulty_level" in df.columns:
-        df["__difficulty__"] = df["difficulty_level"]
+        df["__difficulty__"] = df["difficulty_level"].astype(str).str.title()
     elif "level" in df.columns:
-        df["__difficulty__"] = df["level"]
+        df["__difficulty__"] = df["level"].astype(str).str.title()
     else:
-        # If no difficulty column, assume ALL Easy
         df["__difficulty__"] = "Easy"
 
     return df
@@ -36,7 +40,7 @@ if "started" not in st.session_state:
     st.session_state.q_no = 0
     st.session_state.score = 0
     st.session_state.current_level = "Easy"
-    st.session_state.block_answers = []
+    st.session_state.block_answers = []      # last 3 answers
     st.session_state.used_ids = set()
     st.session_state.used_concepts = set()
 
@@ -44,7 +48,7 @@ if "started" not in st.session_state:
 if not st.session_state.started:
     st.title("📝 Government Exam Practice Test")
 
-    subject = st.selectbox("Select Subject", df["subject"].unique())
+    subject = st.selectbox("Select Subject", sorted(df["subject"].unique()))
     total_qs = st.selectbox("Number of Questions", [30, 50, 100])
 
     if st.button("Start Test"):
@@ -53,38 +57,49 @@ if not st.session_state.started:
         st.session_state.total_qs = total_qs
         st.session_state.start_time = time.time()
         st.session_state.time_limit = total_qs * 60
+
         st.session_state.q_no = 0
         st.session_state.score = 0
         st.session_state.current_level = "Easy"
         st.session_state.block_answers = []
         st.session_state.used_ids = set()
         st.session_state.used_concepts = set()
+
         st.rerun()
 
-# ===================== QUESTION SELECTOR =====================
+# ===================== SAFE QUESTION PICKER =====================
 def get_next_question():
+    subject = st.session_state.subject
     level = st.session_state.current_level
 
-    pool = df[
-        (df["subject"] == st.session_state.subject) &
-        (df["__difficulty__"] == level) &
-        (~df["question_id"].isin(st.session_state.used_ids))
+    base_pool = df[df["subject"] == subject]
+
+    if base_pool.empty:
+        st.error("❌ No questions found for selected subject.")
+        st.stop()
+
+    # 1️⃣ subject + level + unused + new concept
+    pool = base_pool[
+        (base_pool["__difficulty__"] == level) &
+        (~base_pool["question_id"].isin(st.session_state.used_ids))
     ]
 
-    # Rotate concepts inside a block
-    if st.session_state.used_concepts and "concept" in df.columns:
+    if "concept" in df.columns and st.session_state.used_concepts:
         pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
 
-    # Reset concept filter if empty
+    # 2️⃣ relax concept
     if pool.empty:
-        st.session_state.used_concepts.clear()
-        pool = df[
-            (df["subject"] == st.session_state.subject) &
-            (df["__difficulty__"] == level) &
-            (~df["question_id"].isin(st.session_state.used_ids))
+        pool = base_pool[
+            (base_pool["__difficulty__"] == level)
         ]
 
-    return pool.sample(1).iloc[0]
+    # 3️⃣ relax difficulty
+    if pool.empty:
+        pool = base_pool
+
+    # 4️⃣ guaranteed safety
+    q = pool.sample(1, replace=True).iloc[0]
+    return q
 
 # ===================== TEST PAGE =====================
 if st.session_state.started:
@@ -97,38 +112,56 @@ if st.session_state.started:
         st.write(f"Final Difficulty Level: **{st.session_state.current_level}**")
         st.stop()
 
-    def get_next_question():
-    level = st.session_state.current_level
-    subject = st.session_state.subject
+    q = get_next_question()
 
-    # 1️⃣ Strict filter: subject + level + unused + new concept
-    pool = df[
-        (df["subject"] == subject) &
-        (df["__difficulty__"] == level) &
-        (~df["question_id"].isin(st.session_state.used_ids))
-    ]
+    st.session_state.used_ids.add(q["question_id"])
+    if "concept" in q:
+        st.session_state.used_concepts.add(q["concept"])
 
-    if st.session_state.used_concepts and "concept" in df.columns:
-        pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
+    st.progress((st.session_state.q_no + 1) / st.session_state.total_qs)
+    st.info(f"Difficulty Level: {st.session_state.current_level}")
 
-    # 2️⃣ Relax concept constraint
-    if pool.empty:
-        pool = df[
-            (df["subject"] == subject) &
-            (df["__difficulty__"] == level) &
-            (~df["question_id"].isin(st.session_state.used_ids))
-        ]
+    st.subheader(f"Question {st.session_state.q_no + 1}")
+    st.write(q["question_text"])
 
-    # 3️⃣ Relax difficulty constraint (last resort)
-    if pool.empty:
-        pool = df[
-            (df["subject"] == subject) &
-            (~df["question_id"].isin(st.session_state.used_ids))
-        ]
+    options = {
+        "A": q["option_a"],
+        "B": q["option_b"],
+        "C": q["option_c"],
+        "D": q["option_d"]
+    }
 
-    # 4️⃣ Absolute fallback
-    if pool.empty:
-        st.error("⚠️ No more questions available.")
-        st.stop()
+    choice = st.radio(
+        "Choose one option:",
+        list(options.keys()),
+        format_func=lambda x: f"{x}. {options[x]}",
+        index=None,
+        key=f"q_{st.session_state.q_no}"
+    )
 
-    return pool.sample(1).iloc[0]
+    if st.button("Submit Answer"):
+        correct = q["correct_option"]
+
+        if choice == correct:
+            st.success("✅ Correct")
+            st.session_state.score += 1
+            st.session_state.block_answers.append(True)
+        else:
+            st.error(f"❌ Wrong | Correct answer: {correct}")
+            st.session_state.block_answers.append(False)
+
+        st.session_state.q_no += 1
+
+        # ===================== 3-QUESTION BLOCK LOGIC =====================
+        if len(st.session_state.block_answers) == 3:
+            if all(st.session_state.block_answers):
+                idx = LEVELS.index(st.session_state.current_level)
+                if idx < len(LEVELS) - 1:
+                    st.session_state.current_level = LEVELS[idx + 1]
+                    st.info(f"⬆ Level Up → {st.session_state.current_level}")
+
+            # reset block
+            st.session_state.block_answers.clear()
+            st.session_state.used_concepts.clear()
+
+        st.rerun()
