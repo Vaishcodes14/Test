@@ -13,7 +13,20 @@ LEVELS = ["Easy", "Medium", "Hard"]
 @st.cache_data
 def load_data():
     df = pd.read_csv(DATA_PATH)
-    return df.fillna("")
+    df = df.fillna("")
+
+    # 🔍 Auto-detect difficulty column
+    if "difficulty" in df.columns:
+        df["__difficulty__"] = df["difficulty"]
+    elif "difficulty_level" in df.columns:
+        df["__difficulty__"] = df["difficulty_level"]
+    elif "level" in df.columns:
+        df["__difficulty__"] = df["level"]
+    else:
+        # If no difficulty column, assume ALL Easy
+        df["__difficulty__"] = "Easy"
+
+    return df
 
 df = load_data()
 
@@ -23,7 +36,7 @@ if "started" not in st.session_state:
     st.session_state.q_no = 0
     st.session_state.score = 0
     st.session_state.current_level = "Easy"
-    st.session_state.block_answers = []      # store last 3 answers (True/False)
+    st.session_state.block_answers = []
     st.session_state.used_ids = set()
     st.session_state.used_concepts = set()
 
@@ -54,20 +67,20 @@ def get_next_question():
 
     pool = df[
         (df["subject"] == st.session_state.subject) &
-        (df["difficulty"] == level) &
+        (df["__difficulty__"] == level) &
         (~df["question_id"].isin(st.session_state.used_ids))
     ]
 
-    # Rotate concepts within a 3-question block
-    if st.session_state.used_concepts:
+    # Rotate concepts inside a block
+    if st.session_state.used_concepts and "concept" in df.columns:
         pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
 
-    # If concepts exhausted, reset concept filter
+    # Reset concept filter if empty
     if pool.empty:
         st.session_state.used_concepts.clear()
         pool = df[
             (df["subject"] == st.session_state.subject) &
-            (df["difficulty"] == level) &
+            (df["__difficulty__"] == level) &
             (~df["question_id"].isin(st.session_state.used_ids))
         ]
 
@@ -87,7 +100,8 @@ if st.session_state.started:
     q = get_next_question()
 
     st.session_state.used_ids.add(q["question_id"])
-    st.session_state.used_concepts.add(q["concept"])
+    if "concept" in q:
+        st.session_state.used_concepts.add(q["concept"])
 
     st.progress((st.session_state.q_no + 1) / st.session_state.total_qs)
     st.info(f"Difficulty Level: {st.session_state.current_level}")
@@ -123,7 +137,7 @@ if st.session_state.started:
 
         st.session_state.q_no += 1
 
-        # ===================== BLOCK LOGIC (3 QUESTIONS) =====================
+        # ===== 3-QUESTION BLOCK LOGIC =====
         if len(st.session_state.block_answers) == 3:
             if all(st.session_state.block_answers):
                 idx = LEVELS.index(st.session_state.current_level)
@@ -131,7 +145,6 @@ if st.session_state.started:
                     st.session_state.current_level = LEVELS[idx + 1]
                     st.info(f"⬆ Level Up → {st.session_state.current_level}")
 
-            # Reset block state regardless
             st.session_state.block_answers.clear()
             st.session_state.used_concepts.clear()
 
