@@ -4,7 +4,7 @@ import random
 import time
 
 # ================= CONFIG =================
-st.set_page_config(page_title="Govt Exam Adaptive Test", layout="centered")
+st.set_page_config(page_title="Govt Exam Practice Test", layout="centered")
 
 DATA_PATH = "govt_exam_3000_questions_SYNTHETIC_FIXED_TIME.csv"
 LEVELS = ["Easy", "Medium", "Hard"]
@@ -17,13 +17,13 @@ def load_data():
 
 df = load_data()
 
-# ================= SESSION STATE =================
+# ================= SESSION STATE INIT =================
 if "started" not in st.session_state:
     st.session_state.started = False
     st.session_state.q_no = 0
     st.session_state.score = 0
     st.session_state.current_level = "Easy"
-    st.session_state.block_answers = []   # store last 3 results
+    st.session_state.block_answers = []     # store last 3 results
     st.session_state.used_ids = set()
     st.session_state.used_concepts = set()
 
@@ -42,7 +42,7 @@ if not st.session_state.started:
         st.session_state.time_limit = total_qs * 60
         st.rerun()
 
-# ================= QUESTION SELECTION =================
+# ================= QUESTION SELECTOR =================
 def get_next_question():
     level = st.session_state.current_level
 
@@ -52,12 +52,11 @@ def get_next_question():
         (~df["question_id"].isin(st.session_state.used_ids))
     ]
 
-    # rotate concepts inside a block
+    # rotate concepts within block
     if st.session_state.used_concepts:
         pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
 
     if pool.empty:
-        # reset concept rotation if needed
         st.session_state.used_concepts.clear()
         pool = df[
             (df["subject"] == st.session_state.subject) &
@@ -68,7 +67,7 @@ def get_next_question():
     return pool.sample(1).iloc[0]
 
 # ================= TEST PAGE =================
-else:
+if st.session_state.started:
     elapsed = int(time.time() - st.session_state.start_time)
     remaining = st.session_state.time_limit - elapsed
 
@@ -84,7 +83,7 @@ else:
     st.session_state.used_concepts.add(q["concept"])
 
     st.subheader(f"Question {st.session_state.q_no + 1}")
-    st.info(f"Difficulty: {st.session_state.current_level}")
+    st.info(f"Difficulty Level: {st.session_state.current_level}")
     st.write(q["question_text"])
 
     options = {
@@ -109,19 +108,19 @@ else:
             st.session_state.score += 1
             st.session_state.block_answers.append(True)
         else:
-            st.error(f"❌ Wrong | Correct: {correct}")
+            st.error(f"❌ Wrong | Correct answer: {correct}")
             st.session_state.block_answers.append(False)
 
         st.session_state.q_no += 1
 
-        # ================= BLOCK LOGIC =================
+        # ===== BLOCK LOGIC (3 QUESTIONS) =====
         if len(st.session_state.block_answers) == 3:
             if all(st.session_state.block_answers):
                 idx = LEVELS.index(st.session_state.current_level)
                 if idx < len(LEVELS) - 1:
                     st.session_state.current_level = LEVELS[idx + 1]
                     st.info(f"⬆ Level Up → {st.session_state.current_level}")
-            # reset block
+
             st.session_state.block_answers.clear()
             st.session_state.used_concepts.clear()
 
