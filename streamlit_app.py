@@ -2,11 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import time
-import os
-import streamlit as st
 
-st.write("FILES STREAMLIT SEES:")
-st.write(os.listdir("."))
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Govt Exam Practice Test", layout="centered")
