@@ -97,55 +97,38 @@ if st.session_state.started:
         st.write(f"Final Difficulty Level: **{st.session_state.current_level}**")
         st.stop()
 
-    q = get_next_question()
+    def get_next_question():
+    level = st.session_state.current_level
+    subject = st.session_state.subject
 
-    st.session_state.used_ids.add(q["question_id"])
-    if "concept" in q:
-        st.session_state.used_concepts.add(q["concept"])
+    # 1️⃣ Strict filter: subject + level + unused + new concept
+    pool = df[
+        (df["subject"] == subject) &
+        (df["__difficulty__"] == level) &
+        (~df["question_id"].isin(st.session_state.used_ids))
+    ]
 
-    st.progress((st.session_state.q_no + 1) / st.session_state.total_qs)
-    st.info(f"Difficulty Level: {st.session_state.current_level}")
+    if st.session_state.used_concepts and "concept" in df.columns:
+        pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
 
-    st.subheader(f"Question {st.session_state.q_no + 1}")
-    st.write(q["question_text"])
+    # 2️⃣ Relax concept constraint
+    if pool.empty:
+        pool = df[
+            (df["subject"] == subject) &
+            (df["__difficulty__"] == level) &
+            (~df["question_id"].isin(st.session_state.used_ids))
+        ]
 
-    options = {
-        "A": q["option_a"],
-        "B": q["option_b"],
-        "C": q["option_c"],
-        "D": q["option_d"]
-    }
+    # 3️⃣ Relax difficulty constraint (last resort)
+    if pool.empty:
+        pool = df[
+            (df["subject"] == subject) &
+            (~df["question_id"].isin(st.session_state.used_ids))
+        ]
 
-    choice = st.radio(
-        "Choose one option:",
-        list(options.keys()),
-        format_func=lambda x: f"{x}. {options[x]}",
-        index=None,
-        key=f"q_{st.session_state.q_no}"
-    )
+    # 4️⃣ Absolute fallback
+    if pool.empty:
+        st.error("⚠️ No more questions available.")
+        st.stop()
 
-    if st.button("Submit Answer"):
-        correct = q["correct_option"]
-
-        if choice == correct:
-            st.success("✅ Correct")
-            st.session_state.score += 1
-            st.session_state.block_answers.append(True)
-        else:
-            st.error(f"❌ Wrong | Correct answer: {correct}")
-            st.session_state.block_answers.append(False)
-
-        st.session_state.q_no += 1
-
-        # ===== 3-QUESTION BLOCK LOGIC =====
-        if len(st.session_state.block_answers) == 3:
-            if all(st.session_state.block_answers):
-                idx = LEVELS.index(st.session_state.current_level)
-                if idx < len(LEVELS) - 1:
-                    st.session_state.current_level = LEVELS[idx + 1]
-                    st.info(f"⬆ Level Up → {st.session_state.current_level}")
-
-            st.session_state.block_answers.clear()
-            st.session_state.used_concepts.clear()
-
-        st.rerun()
+    return pool.sample(1).iloc[0]
