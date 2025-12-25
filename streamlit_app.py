@@ -10,8 +10,7 @@ st.write(os.listdir("."))
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Govt Exam Practice Test", layout="centered")
-
-DATA_PATH = "govt_exam_3000_questions_SYNTHETIC_FIXED_TIME.csv"
+ "DATA_PATH = "govt_exam_3000_questions_CORRECTED.csv"
 LEVELS = ["Easy", "Medium", "Hard"]
 
 # ================= LOAD DATA =================
