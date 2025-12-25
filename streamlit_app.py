@@ -3,13 +3,13 @@ import pandas as pd
 import random
 import time
 
+# ===================== CONFIG =====================
+st.set_page_config(page_title="Government Exam Practice Test", layout="centered")
 
-# ================= CONFIG =================
-st.set_page_config(page_title="Govt Exam Practice Test", layout="centered")
- "DATA_PATH = "govt_exam_3000_questions_CORRECTED.csv"
+DATA_PATH = "govt_exam_3000_questions_CORRECTED.csv"
 LEVELS = ["Easy", "Medium", "Hard"]
 
-# ================= LOAD DATA =================
+# ===================== LOAD DATA =====================
 @st.cache_data
 def load_data():
     df = pd.read_csv(DATA_PATH)
@@ -17,17 +17,17 @@ def load_data():
 
 df = load_data()
 
-# ================= SESSION STATE INIT =================
+# ===================== SESSION STATE =====================
 if "started" not in st.session_state:
     st.session_state.started = False
     st.session_state.q_no = 0
     st.session_state.score = 0
     st.session_state.current_level = "Easy"
-    st.session_state.block_answers = []     # store last 3 results
+    st.session_state.block_answers = []      # store last 3 answers (True/False)
     st.session_state.used_ids = set()
     st.session_state.used_concepts = set()
 
-# ================= START PAGE =================
+# ===================== START PAGE =====================
 if not st.session_state.started:
     st.title("📝 Government Exam Practice Test")
 
@@ -40,9 +40,15 @@ if not st.session_state.started:
         st.session_state.total_qs = total_qs
         st.session_state.start_time = time.time()
         st.session_state.time_limit = total_qs * 60
+        st.session_state.q_no = 0
+        st.session_state.score = 0
+        st.session_state.current_level = "Easy"
+        st.session_state.block_answers = []
+        st.session_state.used_ids = set()
+        st.session_state.used_concepts = set()
         st.rerun()
 
-# ================= QUESTION SELECTOR =================
+# ===================== QUESTION SELECTOR =====================
 def get_next_question():
     level = st.session_state.current_level
 
@@ -52,10 +58,11 @@ def get_next_question():
         (~df["question_id"].isin(st.session_state.used_ids))
     ]
 
-    # rotate concepts within block
+    # Rotate concepts within a 3-question block
     if st.session_state.used_concepts:
         pool = pool[~pool["concept"].isin(st.session_state.used_concepts)]
 
+    # If concepts exhausted, reset concept filter
     if pool.empty:
         st.session_state.used_concepts.clear()
         pool = df[
@@ -66,15 +73,15 @@ def get_next_question():
 
     return pool.sample(1).iloc[0]
 
-# ================= TEST PAGE =================
+# ===================== TEST PAGE =====================
 if st.session_state.started:
     elapsed = int(time.time() - st.session_state.start_time)
     remaining = st.session_state.time_limit - elapsed
 
     if remaining <= 0 or st.session_state.q_no >= st.session_state.total_qs:
         st.subheader("✅ Test Completed")
-        st.write(f"Score: {st.session_state.score} / {st.session_state.total_qs}")
-        st.write(f"Final Level Reached: {st.session_state.current_level}")
+        st.write(f"Score: **{st.session_state.score} / {st.session_state.total_qs}**")
+        st.write(f"Final Difficulty Level: **{st.session_state.current_level}**")
         st.stop()
 
     q = get_next_question()
@@ -82,8 +89,10 @@ if st.session_state.started:
     st.session_state.used_ids.add(q["question_id"])
     st.session_state.used_concepts.add(q["concept"])
 
-    st.subheader(f"Question {st.session_state.q_no + 1}")
+    st.progress((st.session_state.q_no + 1) / st.session_state.total_qs)
     st.info(f"Difficulty Level: {st.session_state.current_level}")
+
+    st.subheader(f"Question {st.session_state.q_no + 1}")
     st.write(q["question_text"])
 
     options = {
@@ -97,7 +106,8 @@ if st.session_state.started:
         "Choose one option:",
         list(options.keys()),
         format_func=lambda x: f"{x}. {options[x]}",
-        index=None
+        index=None,
+        key=f"q_{st.session_state.q_no}"
     )
 
     if st.button("Submit Answer"):
@@ -113,7 +123,7 @@ if st.session_state.started:
 
         st.session_state.q_no += 1
 
-        # ===== BLOCK LOGIC (3 QUESTIONS) =====
+        # ===================== BLOCK LOGIC (3 QUESTIONS) =====================
         if len(st.session_state.block_answers) == 3:
             if all(st.session_state.block_answers):
                 idx = LEVELS.index(st.session_state.current_level)
@@ -121,6 +131,7 @@ if st.session_state.started:
                     st.session_state.current_level = LEVELS[idx + 1]
                     st.info(f"⬆ Level Up → {st.session_state.current_level}")
 
+            # Reset block state regardless
             st.session_state.block_answers.clear()
             st.session_state.used_concepts.clear()
 
